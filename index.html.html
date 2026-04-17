@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>박주연선생님과 찾아보는 세계 지리 퀴즈 - 대륙별 주요 지형</title>
+    <!-- 안정적인 cdnjs 링크 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+    <style>
+        body { margin: 0; padding: 0; font-family: 'Malgun Gothic', sans-serif; background-color: #f8f9fa; }
+        
+        #header { background-color: #2c3e50; color: white; padding: 10px; text-align: center; }
+        #header h1 { margin: 0; font-size: 1.5em; }
+        
+        /* 대륙 선택 버튼 영역 */
+        #continent-controls { background-color: #34495e; padding: 10px; display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; }
+        .cont-btn { padding: 8px 15px; font-size: 1em; cursor: pointer; background-color: #7f8c8d; color: white; border: none; border-radius: 5px; font-weight: bold; transition: 0.2s; }
+        .cont-btn:hover, .cont-btn.active { background-color: #f39c12; color: white; }
+
+        /* 컨트롤 패널 (퀴즈 영역) */
+        #controls { background-color: #ecf0f1; padding: 15px; text-align: center; font-size: 1.1em; display: flex; justify-content: center; align-items: center; gap: 15px; flex-wrap: wrap; box-shadow: 0 2px 5px rgba(0,0,0,0.1); z-index: 1000; position: relative; }
+        .target-name { font-weight: bold; color: #e74c3c; font-size: 1.3em; background: #fff; padding: 5px 15px; border-radius: 5px; border: 2px solid #e74c3c; min-width: 150px; display: inline-block; }
+        button.action-btn { padding: 10px 15px; font-size: 1em; cursor: pointer; background-color: #3498db; color: white; border: none; border-radius: 5px; font-weight: bold; }
+        button.action-btn:hover { background-color: #2980b9; }
+        .btn-green { background-color: #27ae60 !important; }
+        .btn-green:hover { background-color: #2ecc71 !important; }
+        #message { font-weight: bold; min-width: 250px; font-size: 1.1em; }
+        
+        /* 지도 영역: 높이를 명확하게 지정하여 화면에서 사라지지 않게 고정 */
+        #map { width: 100%; height: 75vh; min-height: 500px; cursor: crosshair; background-color: #e5e3df; }
+    </style>
+</head>
+<body>
+
+    <div id="header">
+        <h1>🌍 박주연선생님과 대륙별 주요 지형 마스터하기</h1>
+    </div>
+
+    <!-- 대륙별 확대 및 필터링 버튼 -->
+    <div id="continent-controls">
+        <button class="cont-btn active" id="btn-All" onclick="setContinent('All', [25, 0], 2)">🌍 전세계 (39개)</button>
+        <button class="cont-btn" id="btn-Asia" onclick="setContinent('Asia', [35, 85], 3)">🌏 아시아 (11개)</button>
+        <button class="cont-btn" id="btn-Europe" onclick="setContinent('Europe', [50, 15], 4)">🇪🇺 유럽 (10개)</button>
+        <button class="cont-btn" id="btn-Africa" onclick="setContinent('Africa', [5, 20], 3)">🌍 아프리카 (13개)</button>
+        <button class="cont-btn" id="btn-America" onclick="setContinent('America', [15, -85], 3)">🌎 아메리카 (9개)</button>
+    </div>
+
+    <!-- 학습 및 퀴즈 제어 영역 -->
+    <div id="controls">
+        <button class="action-btn btn-green" onclick="showStudyMode()">📖 현재 지역 정답 보기 (학습)</button>
+        <button class="action-btn" id="startBtn" onclick="startGame()">🎮 현재 지역 퀴즈 시작</button>
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <span>찾을 곳:</span> <span id="target-name" class="target-name">-</span>
+        </div>
+        <div id="message">대륙을 선택하고 학습이나 퀴즈를 시작하세요!</div>
+    </div>
+
+    <div id="map"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+    <script>
+        // 전체 지형 데이터 (총 39개소)
+        const geoData = [
+            // 아시아 & 유럽 공통
+            { name: '카스피해', lat: 42.0, lng: 50.0, continents: ['Asia', 'Europe'], type: '#3498db', desc: '세계에서 가장 큰 호수 (내해)' },
+            { name: '우랄산맥', lat: 60.0, lng: 59.0, continents: ['Asia', 'Europe'], type: '#8e44ad', desc: '유럽과 아시아를 나누는 자연 경계' },
+            
+            // 아시아
+            { name: '히말라야 산맥', lat: 28.0, lng: 84.0, continents: ['Asia'], type: '#8e44ad', desc: '세계 최고봉 에베레스트가 있는 산맥' },
+            { name: '티베트고원', lat: 33.0, lng: 88.0, continents: ['Asia'], type: '#d35400', desc: '세계의 지붕이라 불리는 거대한 고원' },
+            { name: '오비강', lat: 61.0, lng: 69.0, continents: ['Asia'], type: '#3498db', desc: '러시아 시베리아를 북쪽으로 흐르는 강' },
+            { name: '갠지스강', lat: 25.5, lng: 83.0, continents: ['Asia'], type: '#3498db', desc: '인도 북부, 힌두교의 성스러운 강' },
+            { name: '메콩강', lat: 15.0, lng: 105.0, continents: ['Asia'], type: '#3498db', desc: '동남아시아 여러 나라를 거치는 최대의 강' },
+            { name: '창장강', lat: 30.0, lng: 112.0, continents: ['Asia'], type: '#3498db', desc: '아시아에서 가장 긴 강 (중국)' },
+            { name: '티그리스강', lat: 34.0, lng: 44.0, continents: ['Asia'], type: '#3498db', desc: '메소포타미아 문명 발상지 중 하나' },
+            { name: '유프라테스강', lat: 34.0, lng: 41.0, continents: ['Asia'], type: '#3498db', desc: '티그리스강과 함께 메소포타미아 문명 형성' },
+            { name: '브로모 화산', lat: -7.94, lng: 112.95, continents: ['Asia'], type: '#c0392b', desc: '인도네시아 자바섬의 유명한 활화산' },
+
+            // 유럽
+            { name: '북해', lat: 56.0, lng: 3.0, continents: ['Europe'], type: '#2980b9', desc: '유럽 북서부의 바다, 석유와 천연가스 산지' },
+            { name: '지중해', lat: 35.0, lng: 18.0, continents: ['Europe', 'Africa'], type: '#2980b9', desc: '유럽, 아프리카, 아시아에 둘러싸인 바다' },
+            { name: '스칸디나비아 산맥', lat: 65.0, lng: 14.0, continents: ['Europe'], type: '#8e44ad', desc: '북유럽 스칸디나비아반도를 덮은 산맥' },
+            { name: '피오르해안', lat: 61.0, lng: 5.0, continents: ['Europe'], type: '#1abc9c', desc: '빙하가 만든 좁고 깊은 만 (노르웨이 해안)' },
+            { name: '알프스산맥', lat: 46.5, lng: 9.5, continents: ['Europe'], type: '#8e44ad', desc: '유럽 중남부의 거대한 신기 습곡 산맥' },
+            { name: '피레네산맥', lat: 42.6, lng: 1.0, continents: ['Europe'], type: '#8e44ad', desc: '프랑스와 에스파냐(스페인)의 자연 국경' },
+            { name: '라인강', lat: 50.0, lng: 8.0, continents: ['Europe'], type: '#3498db', desc: '유럽 최대 공업 지대를 지나는 수운 교통로' },
+            { name: '다뉴브강', lat: 45.0, lng: 19.0, continents: ['Europe'], type: '#3498db', desc: '유럽 여러 나라의 수도를 거쳐 흑해로 흐르는 강' },
+
+            // 아프리카
+            { name: '홍해', lat: 20.0, lng: 38.0, continents: ['Africa'], type: '#2980b9', desc: '아프리카와 아라비아반도 사이의 바다' },
+            { name: '대서양', lat: 0.0, lng: -30.0, continents: ['Africa', 'America'], type: '#2980b9', desc: '아프리카/유럽과 아메리카 사이의 거대한 바다' },
+            { name: '인도양', lat: -10.0, lng: 70.0, continents: ['Africa'], type: '#2980b9', desc: '아프리카, 아시아, 오세아니아에 둘러싸인 바다' },
+            { name: '아틀라스산맥', lat: 31.5, lng: -6.5, continents: ['Africa'], type: '#8e44ad', desc: '아프리카 북서부의 신기 습곡 산맥' },
+            { name: '사하라사막', lat: 23.0, lng: 11.0, continents: ['Africa'], type: '#f39c12', desc: '세계에서 가장 넓은 사막' },
+            { name: '나일강', lat: 15.0, lng: 32.5, continents: ['Africa'], type: '#3498db', desc: '세계에서 가장 긴 강 (이집트 문명)' },
+            { name: '빅토리아호수', lat: -1.0, lng: 33.0, continents: ['Africa'], type: '#3498db', desc: '아프리카 최대의 호수' },
+            { name: '킬리만자로산', lat: -3.06, lng: 37.35, continents: ['Africa'], type: '#8e44ad', desc: '아프리카 대륙의 최고봉 (화산)' },
+            { name: '동아프리카지구대', lat: 0.0, lng: 36.0, continents: ['Africa'], type: '#d35400', desc: '땅이 갈라지며 형성된 거대한 골짜기 지형' },
+            { name: '빅토리아폭포', lat: -17.92, lng: 25.85, continents: ['Africa'], type: '#1abc9c', desc: '잠베지강의 거대한 폭포' },
+            { name: '나미브사막', lat: -24.0, lng: 15.0, continents: ['Africa'], type: '#f39c12', desc: '아프리카 남서부 해안을 따라 발달한 사막' },
+            { name: '드라켄즈버그산맥', lat: -29.0, lng: 29.0, continents: ['Africa'], type: '#8e44ad', desc: '남아프리카 공화국 동부에 위치한 산맥' },
+
+            // 아메리카
+            { name: '로키산맥', lat: 43.0, lng: -110.0, continents: ['America'], type: '#8e44ad', desc: '북아메리카 서부를 가로지르는 거대한 산맥' },
+            { name: '애팔래치아산맥', lat: 38.0, lng: -80.0, continents: ['America'], type: '#8e44ad', desc: '북아메리카 동부에 위치한 비교적 완만한 오래된 산맥' },
+            { name: '미시시피강', lat: 35.0, lng: -90.0, continents: ['America'], type: '#3498db', desc: '북아메리카 최대의 하천' },
+            { name: '안데스산맥', lat: -20.0, lng: -68.0, continents: ['America'], type: '#8e44ad', desc: '남아메리카 서해안을 따라 뻗은 세계 최장 산맥' },
+            { name: '아마존강', lat: -3.0, lng: -60.0, continents: ['America'], type: '#3498db', desc: '세계 최대의 유역 면적과 유량을 자랑하는 강' },
+            { name: '리오그란데강', lat: 29.0, lng: -103.0, continents: ['America'], type: '#3498db', desc: '미국과 멕시코의 국경을 이루는 강' },
+            { name: '카리브해', lat: 15.0, lng: -75.0, continents: ['America'], type: '#2980b9', desc: '중앙아메리카와 남아메리카 북부에 걸친 바다' },
+            { name: '태평양', lat: 0.0, lng: -140.0, continents: ['America'], type: '#2980b9', desc: '아메리카 서쪽의 지구에서 가장 큰 대양' }
+        ];
+
+        // 지도 초기화 및 높이 재계산 강제
+        var map = L.map('map').setView([25, 0], 2);
+        
+        // 지형이 잘 보이는 구글 지도 (지형도)
+        L.tileLayer('https://mt1.google.com/vt/lyrs=p&x={x}&y={y}&z={z}', {
+            attribution: '&copy; Google Maps', noWrap: false
+        }).addTo(map);
+        document.querySelector('.leaflet-control-attribution').style.display = 'none';
+
+        // 맵 로드 후 사이즈 재설정 (안 보임 방지)
+        setTimeout(function(){ map.invalidateSize(); }, 500);
+
+        let currentContinent = 'All'; 
+        let currentTarget = null;
+        let remainingFeatures = [];
+        let markers = []; 
+
+        function updateUI(targetText, msgText, msgColor) {
+            document.getElementById('target-name').innerText = targetText;
+            document.getElementById('message').innerText = msgText;
+            document.getElementById('message').style.color = msgColor;
+        }
+
+        function setContinent(continentName, centerCoords, zoomLevel) {
+            currentContinent = continentName;
+            map.setView(centerCoords, zoomLevel); 
+            
+            document.querySelectorAll('.cont-btn').forEach(btn => btn.classList.remove('active'));
+            document.getElementById('btn-' + continentName).classList.add('active');
+
+            clearMarkers();
+            currentTarget = null;
+            updateUI('-', '대륙이 변경되었습니다. 학습이나 퀴즈를 다시 시작해주세요.', 'black');
+        }
+
+        function getFilteredData() {
+            if (currentContinent === 'All') return geoData;
+            return geoData.filter(item => item.continents.includes(currentContinent));
+        }
+
+        function showStudyMode() {
+            clearMarkers();
+            currentTarget = null;
+            updateUI('학습 모드', '마커를 클릭하여 지형 이름을 확인하세요!', '#2980b9');
+            
+            const activeData = getFilteredData();
+            activeData.forEach(item => {
+                let marker = L.circleMarker([item.lat, item.lng], {
+                    color: '#fff', weight: 2, fillColor: item.type, fillOpacity: 0.9, radius: 8
+                }).addTo(map);
+                marker.bindPopup(`<div style="text-align:center; min-width: 150px;"><b>${item.name}</b><br><span style="color:gray; font-size:0.9em;">${item.desc}</span></div>`);
+                markers.push(marker);
+            });
+        }
+
+        function clearMarkers() {
+            markers.forEach(m => map.removeLayer(m));
+            markers = [];
+        }
+
+        function startGame() {
+            clearMarkers();
+            remainingFeatures = [...getFilteredData()]; 
+            nextQuestion();
+        }
+
+        function nextQuestion() {
+            if (remainingFeatures.length === 0) {
+                updateUI('🎉 퀴즈 완료!', '선택한 지역의 모든 장소를 찾았습니다!', 'green');
+                currentTarget = null;
+                return;
+            }
+            const randomIndex = Math.floor(Math.random() * remainingFeatures.length);
+            currentTarget = remainingFeatures[randomIndex];
+            updateUI(currentTarget.name, `남은 문제: ${remainingFeatures.length}개`, 'black');
+        }
+
+        map.on('click', function(e) {
+            if (!currentTarget) return; 
+
+            const dist = map.distance(e.latlng, L.latLng(currentTarget.lat, currentTarget.lng));
+            
+            if (dist < 1200000) {
+                updateUI(currentTarget.name, `⭕ 정답! (${currentTarget.name})`, 'green');
+
+                let marker = L.circleMarker([currentTarget.lat, currentTarget.lng], {
+                    color: '#fff', weight: 2, fillColor: currentTarget.type, fillOpacity: 1, radius: 11
+                }).addTo(map);
+                marker.bindPopup(`<div style="text-align:center;"><b>${currentTarget.name}</b><br><span style="color:gray; font-size:0.9em;">${currentTarget.desc}</span></div>`).openPopup();
+                markers.push(marker);
+
+                remainingFeatures = remainingFeatures.filter(f => f.name !== currentTarget.name);
+                currentTarget = null; 
+                setTimeout(nextQuestion, 1500); 
+            } else {
+                updateUI(currentTarget.name, '❌ 거리가 너무 멉니다. 해당 대륙의 지형을 다시 확인하세요.', 'red');
+            }
+        });
+    </script>
+</body>
+</html>
